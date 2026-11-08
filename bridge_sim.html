@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bridge Failure Simulator — SetuSentry</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0a0c10;color:#e8e8e8;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
+
+header{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 14px;background:#12151c;
+  border-bottom:2px solid #E8611A;flex-shrink:0;
+  min-height:40px;
+}
+header .brand{color:#E8611A;font-weight:800;font-size:0.95rem;white-space:nowrap}
+header .title{color:#ccc;font-size:0.88rem}
+header .disc{margin-left:auto;color:#555;font-size:0.65rem;font-style:italic;white-space:nowrap}
+
+.layout{display:flex;height:calc(100vh - 40px)}
+
+/* ── PANEL ── */
+.panel{
+  width:270px;min-width:270px;background:#12151c;
+  border-right:1px solid #1e2130;overflow-y:auto;
+  padding:10px;display:flex;flex-direction:column;gap:8px;
+}
+.panel::-webkit-scrollbar{width:4px}
+.panel::-webkit-scrollbar-thumb{background:#2a2d3a;border-radius:2px}
+
+.integrity-box{
+  background:#1a1d26;border-radius:7px;padding:10px;
+  text-align:center;border:1px solid #22252d;
+}
+.int-label{font-size:0.6rem;letter-spacing:.12em;color:#888;margin-bottom:2px}
+.int-pct{font-size:2.6rem;font-weight:800;line-height:1.1;transition:color .4s}
+.int-pct.g{color:#22CC66}
+.int-pct.y{color:#BBCC22}
+.int-pct.o{color:#EE9922}
+.int-pct.r{color:#EE4422}
+.int-pct.c{color:#FF2222;animation:blink .35s infinite}
+@keyframes blink{50%{opacity:.25}}
+.int-bar{height:5px;background:#1e2130;border-radius:3px;margin:6px 0 5px;overflow:hidden}
+.int-fill{height:100%;border-radius:3px;transition:width .3s,background .4s}
+.fail-mode{font-size:0.68rem;color:#aaa;min-height:1.4em}
+
+.ctrl-row{display:flex;gap:5px;flex-wrap:wrap}
+.ctrl-row button{
+  flex:1;padding:5px 2px;border:none;border-radius:4px;
+  cursor:pointer;font-size:0.7rem;font-weight:700;
+}
+#bStart{background:#22aa55;color:#fff}
+#bStart:disabled{background:#1a5a30;cursor:default}
+#bPause{background:#aa7722;color:#fff}
+#bPause:disabled{background:#5a4010;cursor:default}
+#bReset{background:#334488;color:#fff}
+#bQuake{background:#aa2222;color:#fff;flex:100%;margin-top:2px}
+#bQuake:active{transform:scale(.97)}
+
+.speed-row{display:flex;align-items:center;gap:6px;font-size:0.68rem;color:#888}
+.speed-row input{flex:1;accent-color:#E8611A;cursor:pointer}
+.sv{color:#E8611A;font-weight:700;min-width:22px}
+
+.time-row{font-size:0.68rem;color:#666;text-align:center}
+.tv{color:#ccc;font-weight:600}
+
+.sec-title{
+  font-size:0.6rem;letter-spacing:.14em;color:#E8611A;
+  padding-bottom:4px;border-bottom:1px solid #1e2130;
+}
+
+.frow{background:#1a1d26;border-radius:5px;padding:7px 9px;border:1px solid #1e2130}
+.fhdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.fname{font-size:0.72rem;font-weight:600}
+.fpct{font-size:0.7rem;color:#E8611A;font-weight:700;min-width:30px;text-align:right}
+.fdesc{font-size:0.6rem;color:#666;margin-bottom:4px;line-height:1.3}
+.frow input[type=range]{width:100%;height:3px;cursor:pointer}
+
+/* ── SIMULATION AREA ── */
+.sim-area{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+canvas{flex:1;display:block;width:100%}
+
+.event-log{
+  height:80px;background:#0d0f14;border-top:1px solid #1e2130;
+  padding:5px 10px;overflow-y:auto;
+}
+.event-log::-webkit-scrollbar{width:3px}
+.event-log::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+.log-hdr{color:#E8611A;font-weight:700;font-size:0.6rem;letter-spacing:.1em;margin-bottom:3px}
+.le{font-size:0.63rem;padding:1px 0;border-bottom:1px solid #131519;
+    font-family:'Cascadia Code',Consolas,monospace}
+.le.ok{color:#22CC66}.le.info{color:#7799bb}.le.warn{color:#EE9922}.le.crit{color:#EE4422;font-weight:700}
+
+/* overlay legend */
+.legend{
+  position:absolute;top:8px;right:8px;background:rgba(10,12,16,.8);
+  border:1px solid #22252d;border-radius:5px;padding:6px 8px;
+  font-size:0.6rem;line-height:1.6;
+}
+.legend .lt{color:#E8611A;font-weight:700;margin-bottom:2px;font-size:0.6rem;letter-spacing:.08em}
+.lc{display:flex;align-items:center;gap:5px;color:#aaa}
+.ldot{width:8px;height:3px;border-radius:2px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">🛡 SetuSentry</span>
+  <span class="title">Bridge Failure Simulator</span>
+  <span class="disc">Educational model — not for engineering assessment</span>
+</header>
+
+<div class="layout">
+  <div class="panel" id="panel">
+
+    <div class="integrity-box">
+      <div class="int-label">STRUCTURAL INTEGRITY</div>
+      <div class="int-pct g" id="iPct">100%</div>
+      <div class="int-bar"><div class="int-fill" id="iFill" style="width:100%;background:#22CC66"></div></div>
+      <div class="fail-mode" id="fMode">All systems nominal</div>
+    </div>
+
+    <div class="ctrl-row">
+      <button id="bStart">▶ Start</button>
+      <button id="bPause" disabled>⏸ Pause</button>
+      <button id="bReset">↺ Reset</button>
+      <button id="bQuake">⚡ Trigger Earthquake</button>
+    </div>
+
+    <div class="speed-row">
+      ⏩ Speed: <span class="sv" id="sv">1×</span>
+      <input type="range" id="spdSlider" min="1" max="25" value="1">
+    </div>
+    <div class="time-row">Elapsed: <span class="tv" id="tv">0 days</span></div>
+
+    <div class="sec-title">◆ FAILURE FACTORS</div>
+    <div id="factors"></div>
+  </div>
+
+  <div class="sim-area">
+    <canvas id="cv"></canvas>
+    <div class="legend">
+      <div class="lt">CRACK CAUSES</div>
+      <div class="lc"><div class="ldot" style="background:#996633"></div>Overloading</div>
+      <div class="lc"><div class="ldot" style="background:#8B3A2A"></div>Corrosion</div>
+      <div class="lc"><div class="ldot" style="background:#336699"></div>Scour / Flood</div>
+      <div class="lc"><div class="ldot" style="background:#8B44AA"></div>Seismic</div>
+      <div class="lc"><div class="ldot" style="background:#666"></div>Design / Fatigue</div>
+    </div>
+    <div class="event-log">
+      <div class="log-hdr">▸ STRUCTURAL EVENT LOG</div>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   BRIDGE FAILURE SIMULATOR v1.0
+   SetuSentry — educational prototype
+   Failure factors: Overloading, Corrosion, Foundation Scour,
+   Flood, Poor Construction, Maintenance Neglect, Design Error,
+   Bearing Deterioration, Fatigue (auto), Seismic (triggered).
+   Physics are simplified educational models only.
+================================================================ */
+
+// ── FACTOR DEFINITIONS ────────────────────────────────────────
+const FDEFS = [
+  { id:'load',   label:'Vehicle Overloading',      icon:'🚛', color:'#E8611A',
+    desc:'Trucks exceeding design axle load (40–60t vs 25t limit). Causes deck flexure cracks and pier compression.' },
+  { id:'corr',   label:'Reinforcement Corrosion',  icon:'🔴', color:'#CC3333',
+    desc:'Chloride-induced rebar section loss and expansive rust pressure. Causes spalling and cover cracking.' },
+  { id:'scour',  label:'Foundation Scour',         icon:'🌊', color:'#3399CC',
+    desc:'River erosion around pier footings reduces effective foundation depth. Leads to pier tilt and settlement.' },
+  { id:'flood',  label:'Flood / Extreme Rainfall', icon:'🌧', color:'#2255AA',
+    desc:'High-velocity flow, hydrodynamic pressure on piers, debris impact. Accelerates scour by 2–3×.' },
+  { id:'constr', label:'Poor Construction Quality',icon:'🧱', color:'#AA7722',
+    desc:'Substandard concrete (M15 vs M30), low cover, poor compaction. Reduces all structural thresholds.' },
+  { id:'maint',  label:'Maintenance Neglect',      icon:'🔧', color:'#777777',
+    desc:'Inspection gaps, deferred repairs, unsealed cracks. Accelerates every degradation pathway by 2–3×.' },
+  { id:'design', label:'Design Error',             icon:'📐', color:'#BB44AA',
+    desc:'Incorrect load assumptions, underestimated bending moments. Structural capacity is below requirement.' },
+  { id:'brg',    label:'Bearing Deterioration',    icon:'⚙',  color:'#AAAA22',
+    desc:'Failed elastomeric pads create unexpected load paths and deck rotation. Risk of span unseating.' },
+];
+
+// ── STATE ──────────────────────────────────────────────────────
+function mkState() {
+  return {
+    t:0, speed:1, running:false,
+    integrity:100,
+    deck:  { integrity:100, cracks:[], spall:[], deflection:0 },
+    p1:    { integrity:100, cracks:[], tilt:0, scour:0 },
+    p2:    { integrity:100, cracks:[], tilt:0, scour:0 },
+    brg:   { integrity:100 },
+    fatigue:0,
+    factors:{ load:0, corr:0, scour:0, flood:0, constr:0, maint:0, design:0, brg:0 },
+    seismic:false,
+    collapsed:false, collapsePhase:0, collapseType:'',
+    shakeX:0, shakeY:0,
+    waterT:0,
+    vehicles:[], lastV:0,
+    debris:[],
+  };
+}
+let S = mkState();
+
+// ── CANVAS ─────────────────────────────────────────────────────
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let G = {};
+
+function resize() {
+  cv.width  = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  calcGeo();
+}
+
+function calcGeo() {
+  const W=cv.width, H=cv.height;
+  G = {
+    W, H,
+    waterY : H*0.60,
+    groundY: H*0.75,
+    deckY  : H*0.33,
+    deckH  : Math.max(13, H*0.055),
+    abtL   : W*0.07,
+    abtR   : W*0.93,
+    p1X    : W*0.33,
+    p2X    : W*0.67,
+    pW     : Math.max(16, W*0.036),
+    fDepth : H*0.14,
+  };
+}
+
+// ── CRACK HELPERS ──────────────────────────────────────────────
+// Pre-generate segment points so cracks are stable frame-to-frame
+function makeCrackPoints(x, y, angle, length) {
+  const pts = [{x, y}];
+  let cx=x, cy=y;
+  const steps = Math.ceil(length/4);
+  const sdx = Math.sin(angle)*length/steps;
+  const sdy = -Math.cos(angle)*length/steps;
+  for(let i=0;i<steps;i++){
+    cx += sdx + (Math.random()-.5)*3;
+    cy += sdy + (Math.random()-.5)*3;
+    pts.push({x:cx, y:cy});
+  }
+  return pts;
+}
+
+function addCrack(target, ox, oy, angle, length, cause) {
+  const cr = {
+    pts: makeCrackPoints(ox, oy, angle, length),
+    cause, w: 0.5 + Math.random()*1.2,
+  };
+  target.push(cr);
+}
+
+const CRACK_COLORS = {
+  load:'#7a5533', corr:'#8B3A2A', scour:'#336699',
+  flood:'#224477', seismic:'#884488', design:'#444', fatigue:'#555', unknown:'#444',
+};
+
+function drawCracks(cracks) {
+  if(!cracks.length) return;
+  cracks.forEach(c => {
+    ctx.strokeStyle = CRACK_COLORS[c.cause]||'#444';
+    ctx.lineWidth   = c.w;
+    ctx.beginPath();
+    ctx.moveTo(c.pts[0].x, c.pts[0].y);
+    for(let i=1;i<c.pts.length;i++) ctx.lineTo(c.pts[i].x, c.pts[i].y);
+    ctx.stroke();
+  });
+}
+
+function trimCracks(arr, max) {
+  if(arr.length>max) arr.splice(0, arr.length-max);
+}
+
+// ── DAMAGE MODEL ───────────────────────────────────────────────
+function getDmgRates() {
+  const f = S.factors;
+  const qm = 1 + f.constr*2.5;
+  const mm = 1 + f.maint *2.0;
+  const dm = 1 + f.design*1.8;
+  const bm = qm*mm*dm;
+
+  return {
+    deck_load   : f.load   * 1.2 * bm,
+    deck_corr   : f.corr   * 0.7 * qm*mm,
+    deck_fatigue: S.fatigue * 0.5 * mm,
+    deck_brg    : Math.max(0, f.brg-0.55)*1.0*qm,
+
+    p1_scour : (f.scour+f.flood*1.5)*1.4*qm,
+    p1_corr  : f.corr*0.5*qm*mm,
+    p1_load  : f.load*0.4*bm,
+    p1_flood : f.flood*0.9*qm,
+
+    p2_scour : (f.scour+f.flood*1.3)*1.3*qm,
+    p2_corr  : f.corr*0.5*qm*mm,
+    p2_load  : f.load*0.35*bm,
+    p2_flood : f.flood*0.75*qm,
+
+    brg_wear : f.brg*0.9*qm*mm,
+  };
+}
+
+function updatePhysics(dtD) {
+  if(S.collapsed) return;
+  const r = getDmgRates();
+
+  // Fatigue accumulates with repeated loads
+  S.fatigue = Math.min(1, S.fatigue + S.factors.load*dtD*0.012);
+
+  // Apply integrity loss per day
+  S.deck.integrity -= (r.deck_load+r.deck_corr+r.deck_fatigue+r.deck_brg)*dtD;
+  S.p1.integrity   -= (r.p1_scour+r.p1_corr+r.p1_load+r.p1_flood)*dtD;
+  S.p2.integrity   -= (r.p2_scour+r.p2_corr+r.p2_load+r.p2_flood)*dtD;
+  S.brg.integrity  -= r.brg_wear*dtD;
+
+  // Seismic event
+  if(S.seismic){
+    const qd = 15+S.factors.constr*10+S.factors.maint*8;
+    S.deck.integrity -= qd;
+    S.p1.integrity   -= qd*1.3;
+    S.p2.integrity   -= qd*1.3;
+    S.shakeX=18; S.shakeY=10;
+    S.seismic=false;
+    for(let i=0;i<10;i++) addRandCrack('p1','seismic');
+    for(let i=0;i<10;i++) addRandCrack('p2','seismic');
+    for(let i=0;i< 7;i++) addRandCrack('deck','seismic');
+  }
+
+  S.shakeX *= 0.84; S.shakeY *= 0.84;
+
+  // Clamp to [0,100]
+  ['deck','p1','p2','brg'].forEach(k => {
+    S[k].integrity = Math.max(0, Math.min(100, S[k].integrity));
+  });
+
+  // Visual derivations
+  const f = S.factors;
+  S.deck.deflection = Math.max(0,
+    (100-S.deck.integrity)*G.deckH*0.012 + f.load*G.deckH*0.28
+  );
+  S.p1.scour = Math.min(G.fDepth*0.95,
+    (f.scour+f.flood*1.5)*S.t*0.08
+  );
+  S.p2.scour = Math.min(G.fDepth*0.95,
+    (f.scour+f.flood*1.3)*S.t*0.07
+  );
+  S.p1.tilt = Math.min(18, S.p1.scour*0.55*(100-S.p1.integrity)/100);
+  S.p2.tilt = Math.min(18, S.p2.scour*0.5 *(100-S.p2.integrity)/100);
+
+  maybeAddCracks(dtD);
+
+  S.integrity = Math.max(0,
+    S.deck.integrity*0.40 +
+    S.p1.integrity  *0.25 +
+    S.p2.integrity  *0.25 +
+    S.brg.integrity *0.10
+  );
+
+  checkMilestones();
+  if(S.integrity<5 && !S.collapsed) triggerCollapse();
+}
+
+// ── CRACK GENERATION PER TICK ──────────────────────────────────
+function addRandCrack(comp, cause) {
+  if(comp==='deck'){
+    const x = G.abtL + Math.random()*(G.abtR-G.abtL);
+    const y = G.deckY + Math.random()*G.deckH;
+    addCrack(S.deck.cracks, x, y,
+      Math.PI/2+(Math.random()-.5)*0.6,
+      6+Math.random()*20, cause);
+  } else {
+    const pX = comp==='p1'?G.p1X:G.p2X;
+    const ph = G.groundY - G.deckY - G.deckH;
+    const x = pX+(Math.random()-.5)*G.pW*0.8;
+    const y = G.deckY+G.deckH + Math.random()*ph;
+    addCrack(comp==='p1'?S.p1.cracks:S.p2.cracks,
+      x, y, (Math.random()-.5)*0.5, 5+Math.random()*14, cause);
+  }
+}
+
+function maybeAddCracks(dtD) {
+  const f=S.factors;
+  if(f.load>0.2    && Math.random()<f.load*dtD*2.5)   addRandCrack('deck','load');
+  if(f.corr>0.15   && Math.random()<f.corr*dtD*2.0)   addRandCrack('deck','corr');
+  if(S.fatigue>0.3 && Math.random()<S.fatigue*dtD*1.0) addRandCrack('deck','fatigue');
+  if(f.design>0.2  && Math.random()<f.design*dtD*0.8)  addRandCrack('deck','design');
+
+  if(f.scour>0.2   && Math.random()<f.scour*dtD*2.0)   addRandCrack('p1','scour');
+  if(f.scour>0.2   && Math.random()<f.scour*dtD*1.8)   addRandCrack('p2','scour');
+  if(f.flood>0.3   && Math.random()<f.flood*dtD*2.5)   addRandCrack('p1','flood');
+  if(f.flood>0.3   && Math.random()<f.flood*dtD*2.2)   addRandCrack('p2','flood');
+  if(f.load>0.4    && Math.random()<f.load*dtD*1.2)    addRandCrack('p1','load');
+  if(f.load>0.4    && Math.random()<f.load*dtD*1.0)    addRandCrack('p2','load');
+
+  // Spalling from corrosion
+  if(f.corr>0.4 && Math.random()<f.corr*dtD*0.9){
+    const x = G.abtL+Math.random()*(G.abtR-G.abtL);
+    S.deck.spall.push({x, r:5+Math.random()*14});
+    if(S.deck.spall.length>35) S.deck.spall.shift();
+  }
+
+  trimCracks(S.deck.cracks, 180);
+  trimCracks(S.p1.cracks, 70);
+  trimCracks(S.p2.cracks, 70);
+}
+
+// ── MILESTONES ─────────────────────────────────────────────────
+const fired = new Set();
+function checkMilestones(){
+  const milestones=[
+    [92,'First hairline cracks developing on deck surface','info'],
+    [80,'Visible cracking — inspection & monitoring recommended','warn'],
+    [65,'Concrete spalling detected — rebar exposure beginning','warn'],
+    [50,'Structural concern: deck deflection and pier cracking visible','warn'],
+    [35,'ALERT: Severe distress — immediate load restrictions required','crit'],
+    [18,'CRITICAL: Imminent failure — emergency closure required','crit'],
+  ];
+  milestones.forEach(([t,m,l])=>{
+    const k='i'+t;
+    if(S.integrity<=t && !fired.has(k)){fired.add(k);logEvent(m,l);}
+  });
+
+  const sc=Math.max(S.p1.scour,S.p2.scour);
+  if(sc>18&&!fired.has('sc18')){fired.add('sc18');logEvent('Foundation scour reaching critical depth — pier stability compromised','warn');}
+  if(S.fatigue>0.5&&!fired.has('fat')){fired.add('fat');logEvent('50% fatigue life consumed — micro-crack accumulation accelerating','warn');}
+  if(S.brg.integrity<40&&!fired.has('brg')){fired.add('brg');logEvent('Bearings critically degraded — deck unseating risk elevated','warn');}
+}
+
+// ── COLLAPSE ───────────────────────────────────────────────────
+function triggerCollapse(){
+  S.collapsed=true; S.collapsePhase=0;
+  const f=S.factors;
+  const scores={scour:f.scour+f.flood,load:f.load,corrosion:f.corr,design:f.design};
+  S.collapseType=Object.entries(scores).sort((a,b)=>b[1]-a[1])[0][0];
+  logEvent('💥 STRUCTURAL COLLAPSE — primary cause: '+S.collapseType.toUpperCase(),'crit');
+}
+
+function updateCollapse(dtS){
+  if(!S.collapsed) return;
+  S.collapsePhase = Math.min(1, S.collapsePhase+dtS*0.28);
+  if(S.collapsePhase<0.95){
+    S.shakeX=(1-S.collapsePhase)*18*(Math.random()-.5);
+    S.shakeY=(1-S.collapsePhase)*10*(Math.random()-.5);
+  }
+}
+
+// ── DRAWING ────────────────────────────────────────────────────
+function drawBg(){
+  const sg=ctx.createLinearGradient(0,0,0,G.waterY);
+  sg.addColorStop(0,'#07090f'); sg.addColorStop(1,'#131b28');
+  ctx.fillStyle=sg; ctx.fillRect(0,0,G.W,G.waterY);
+
+  // Bank ground
+  const gg=ctx.createLinearGradient(0,G.groundY,0,G.H);
+  gg.addColorStop(0,'#28261a'); gg.addColorStop(1,'#1a180e');
+  ctx.fillStyle=gg;
+  ctx.fillRect(0,G.groundY,G.W,G.H-G.groundY);
+
+  // Left/right embankments (sloped)
+  ctx.fillStyle='#2d2b1a';
+  ctx.beginPath();
+  ctx.moveTo(0,G.groundY);
+  ctx.lineTo(G.abtL+G.pW,G.groundY);
+  ctx.lineTo(G.abtL,G.deckY+G.deckH);
+  ctx.lineTo(0,G.deckY+G.deckH);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(G.W,G.groundY);
+  ctx.lineTo(G.abtR-G.pW,G.groundY);
+  ctx.lineTo(G.abtR,G.deckY+G.deckH);
+  ctx.lineTo(G.W,G.deckY+G.deckH);
+  ctx.fill();
+}
+
+let _waterT=0;
+function drawWater(dtS){
+  _waterT+=dtS;
+  const f=S.factors;
+  const rise=f.flood*G.H*0.11;
+  const wy=G.waterY-rise;
+
+  // Water body
+  const turbidity=f.flood*0.7;
+  const wg=ctx.createLinearGradient(0,wy,0,G.H);
+  const wc1=`rgba(${Math.round(10+turbidity*60)},${Math.round(55-turbidity*20)},${Math.round(100-turbidity*50)},0.9)`;
+  const wc2=`rgba(${Math.round(5+turbidity*40)},${Math.round(35-turbidity*10)},${Math.round(70-turbidity*30)},1)`;
+  wg.addColorStop(0,wc1); wg.addColorStop(1,wc2);
+  ctx.fillStyle=wg;
+  ctx.fillRect(G.abtL-G.pW,wy,G.abtR-G.abtL+G.pW*2,G.H-wy);
+
+  // Waves
+  for(let w=0;w<4;w++){
+    const phase=_waterT*0.9+w*1.6;
+    const alpha=0.06+f.flood*0.04;
+    ctx.strokeStyle=`rgba(255,255,255,${alpha})`;
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    for(let x=G.abtL;x<G.abtR;x+=5){
+      const y=wy+5+w*7+Math.sin(x*0.025+phase)*2.5;
+      x===G.abtL?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  // Flood debris logs
+  if(f.flood>0.35){
+    if(Math.random()<f.flood*0.015){
+      S.debris.push({x:G.abtL-10, y:wy+8+Math.random()*20,
+        spd:50+Math.random()*80, w:12+Math.random()*18, h:4+Math.random()*4});
+    }
+  }
+  S.debris=S.debris.filter(d=>{
+    d.x+=d.spd*dtS;
+    ctx.fillStyle='#5a4228';
+    ctx.save();
+    ctx.translate(d.x+d.w/2, d.y);
+    ctx.rotate(Math.sin(d.x*0.02)*0.3);
+    ctx.fillRect(-d.w/2,-d.h/2,d.w,d.h);
+    ctx.restore();
+    return d.x<G.abtR+40;
+  });
+
+  return wy;
+}
+
+function drawPier(pX, pSt, waterY, cp){
+  const ph=G.groundY-G.deckY-G.deckH;
+  const tiltRad=pSt.tilt*Math.PI/180;
+  const intF=pSt.integrity/100;
+  const pierCol=`rgb(${Math.round(100+intF*30)},${Math.round(90+intF*25)},${Math.round(80+intF*20)})`;
+
+  ctx.save();
+
+  // Collapse transform
+  if(cp>0){
+    if(S.collapseType==='scour'||S.collapseType==='load'){
+      const rot=cp*55*Math.PI/180;
+      ctx.translate(pX, G.groundY);
+      ctx.rotate(rot*(pX<G.W/2?-1:1));
+      ctx.translate(-pX,-G.groundY);
+    } else {
+      ctx.translate(0, cp*G.H*0.4);
+    }
+  }
+
+  // Tilt from scour
+  ctx.translate(pX,G.groundY);
+  ctx.rotate(tiltRad);
+  ctx.translate(-pX,-G.groundY);
+
+  // Foundation block
+  ctx.fillStyle='#38322a';
+  ctx.fillRect(pX-G.pW*0.65, G.groundY, G.pW*1.3, G.fDepth);
+
+  // Scour erosion pocket (shows soil removed)
+  if(pSt.scour>2){
+    const sc=pSt.scour;
+    ctx.save();
+    ctx.globalAlpha=0.75;
+    ctx.fillStyle=waterY<G.groundY+sc? 'rgba(20,55,95,0.8)' : 'rgba(0,0,0,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(pX, G.groundY+G.fDepth-sc, G.pW*1.1, sc, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    if(sc>15){
+      ctx.fillStyle='#FF4422';
+      ctx.font=`${Math.max(10,G.pW*0.65)}px sans-serif`;
+      ctx.textAlign='center';
+      ctx.fillText('⚠', pX, G.groundY+G.fDepth-sc+5);
+    }
+  }
+
+  // Pier shaft
+  ctx.fillStyle=pierCol;
+  ctx.fillRect(pX-G.pW/2, G.deckY+G.deckH, G.pW, ph);
+
+  // Pier cap
+  ctx.fillStyle=pierCol;
+  ctx.fillRect(pX-G.pW*0.72, G.deckY+G.deckH-6, G.pW*1.44, 8);
+
+  // Rebar corrosion staining
+  if(S.factors.corr>0.3){
+    ctx.fillStyle=`rgba(140,50,20,${(S.factors.corr-0.3)*0.4})`;
+    for(let i=0;i<3;i++){
+      const rx=pX-G.pW/2+G.pW*(0.2+i*0.3);
+      ctx.fillRect(rx-1, G.deckY+G.deckH, 2, ph*(0.5+Math.random()*0.5));
+    }
+  }
+
+  drawCracks(pSt.cracks);
+  ctx.restore();
+}
+
+function drawDeck(cp){
+  const f=S.factors;
+  const intF=S.deck.integrity/100;
+  const deckCol=`rgb(${Math.round(130+intF*30)},${Math.round(120+intF*25)},${Math.round(110+intF*20)})`;
+
+  ctx.save();
+  if(cp>0){
+    if(S.collapseType==='load'||S.collapseType==='corrosion'){
+      ctx.translate(0, cp*G.H*0.5);
+    }
+  }
+
+  const spans=[[G.abtL,G.p1X],[G.p1X,G.p2X],[G.p2X,G.abtR]];
+  spans.forEach(([x1,x2],si)=>{
+    const mx=(x1+x2)/2;
+    const defl=si===1?S.deck.deflection:S.deck.deflection*0.35;
+
+    // Deck body with sag
+    ctx.beginPath();
+    ctx.moveTo(x1, G.deckY);
+    ctx.quadraticCurveTo(mx, G.deckY+defl, x2, G.deckY);
+    ctx.lineTo(x2, G.deckY+G.deckH);
+    ctx.quadraticCurveTo(mx, G.deckY+G.deckH+defl, x1, G.deckY+G.deckH);
+    ctx.closePath();
+    ctx.fillStyle=deckCol;
+    ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.2)';
+    ctx.lineWidth=0.8;
+    ctx.stroke();
+
+    // Internal girder lines
+    ctx.strokeStyle='rgba(0,0,0,0.15)';
+    ctx.lineWidth=0.7;
+    for(let g=1;g<3;g++){
+      ctx.beginPath();
+      ctx.moveTo(x1, G.deckY+G.deckH*g/3);
+      ctx.quadraticCurveTo(mx, G.deckY+G.deckH*g/3+defl*0.5, x2, G.deckY+G.deckH*g/3);
+      ctx.stroke();
+    }
+  });
+
+  // Spalling: exposed rebar patches
+  S.deck.spall.forEach(sp=>{
+    ctx.fillStyle='#111';
+    ctx.beginPath();
+    ctx.ellipse(sp.x, G.deckY+G.deckH*0.45, sp.r, sp.r*0.45, 0, 0, Math.PI*2);
+    ctx.fill();
+    // Rebar cross
+    ctx.strokeStyle='#CC4411';
+    ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(sp.x-sp.r,G.deckY+G.deckH*0.45); ctx.lineTo(sp.x+sp.r,G.deckY+G.deckH*0.45); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sp.x,G.deckY+G.deckH*0.2); ctx.lineTo(sp.x,G.deckY+G.deckH*0.7); ctx.stroke();
+  });
+
+  // Railing
+  ctx.strokeStyle='#555'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(G.abtL,G.deckY-2); ctx.lineTo(G.abtR,G.deckY-2); ctx.stroke();
+  ctx.strokeStyle='#444'; ctx.lineWidth=1;
+  for(let x=G.abtL+15;x<G.abtR;x+=18){
+    ctx.beginPath(); ctx.moveTo(x,G.deckY-2); ctx.lineTo(x,G.deckY-9); ctx.stroke();
+  }
+
+  // Bearing displacement indicator
+  if(S.brg.integrity<60){
+    const disp=(60-S.brg.integrity)*0.08;
+    ctx.fillStyle='rgba(220,180,20,0.5)';
+    [G.p1X,G.p2X].forEach(px=>{
+      ctx.fillRect(px-G.pW/2+disp, G.deckY+G.deckH-3, G.pW, 4);
+    });
+  }
+
+  drawCracks(S.deck.cracks);
+  ctx.restore();
+}
+
+function drawVehicles(){
+  S.vehicles.forEach(v=>{
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.fillRect(v.x+2, G.deckY, v.w, 3);
+    // Body
+    ctx.fillStyle=v.color;
+    ctx.fillRect(v.x, G.deckY-v.h, v.w, v.h);
+    // Cab
+    if(v.type==='truck'){
+      ctx.fillStyle='#775522';
+      ctx.fillRect(v.x+v.w-10, G.deckY-v.h-5, 10, 5);
+    }
+    // Wheels
+    ctx.fillStyle='#111';
+    ctx.beginPath(); ctx.arc(v.x+4,G.deckY+1,3,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(v.x+v.w-4,G.deckY+1,3,0,Math.PI*2); ctx.fill();
+  });
+}
+
+function updateVehicles(dtS){
+  S.lastV=(S.lastV||0)+dtS;
+  const spawnInt=Math.max(0.4, 3.5-S.factors.load*3.2);
+  if(S.lastV>spawnInt && S.factors.load>0 && !S.collapsed){
+    const heavy=S.factors.load>0.5&&Math.random()<S.factors.load;
+    S.vehicles.push({
+      x:G.abtL+5, speed:55+Math.random()*55,
+      w:heavy?34:20, h:heavy?15:10,
+      color:heavy?'#BB4411':'#4477AA',
+      type:heavy?'truck':'car',
+    });
+    S.lastV=0;
+  }
+  S.vehicles=S.vehicles.filter(v=>{
+    v.x+=v.speed*dtS; return v.x<G.abtR+50;
+  });
+}
+
+function drawLabels(){
+  ctx.textAlign='center';
+  ctx.font=`${Math.max(9,G.W*0.011)}px Segoe UI`;
+  ctx.fillStyle='#666';
+
+  // Span labels
+  [[G.abtL,G.p1X],[G.p1X,G.p2X],[G.p2X,G.abtR]].forEach(([a,b],i)=>{
+    ctx.fillText(`Span ${i+1}`, (a+b)/2, G.deckY-16);
+  });
+  ctx.fillText('Pier 1', G.p1X, G.groundY+G.fDepth+13);
+  ctx.fillText('Pier 2', G.p2X, G.groundY+G.fDepth+13);
+
+  // Fatigue meter
+  if(S.fatigue>0.08){
+    ctx.textAlign='left';
+    ctx.fillStyle=S.fatigue>0.65?'#EE4422':'#EE9922';
+    ctx.fillText(`Fatigue: ${Math.round(S.fatigue*100)}%`, G.abtL+4, G.deckY-18);
+  }
+
+  // Scour depth indicators
+  ctx.textAlign='center';
+  if(S.p1.scour>5){
+    ctx.fillStyle='#3399CC';
+    ctx.fillText(`Scour: ${Math.round(S.p1.scour/G.fDepth*100)}%`, G.p1X, G.groundY+G.fDepth-S.p1.scour-5);
+  }
+  if(S.p2.scour>5){
+    ctx.fillStyle='#3399CC';
+    ctx.fillText(`Scour: ${Math.round(S.p2.scour/G.fDepth*100)}%`, G.p2X, G.groundY+G.fDepth-S.p2.scour-5);
+  }
+}
+
+function drawCollapseOverlay(){
+  if(!S.collapsed) return;
+  const ph=Math.min(1,S.collapsePhase);
+  ctx.fillStyle=`rgba(180,0,0,${ph*0.28})`;
+  ctx.fillRect(0,0,G.W,G.H);
+
+  if(ph>0.25){
+    const a=Math.min(1,(ph-0.25)/0.5);
+    ctx.save();
+    ctx.globalAlpha=a;
+    const fs=Math.max(24,G.W*0.075);
+    ctx.font=`bold ${fs}px Segoe UI`;
+    ctx.textAlign='center';
+    ctx.strokeStyle='#000'; ctx.lineWidth=5;
+    ctx.strokeText('STRUCTURAL COLLAPSE',G.W/2,G.H/2);
+    ctx.fillStyle='#FF2222';
+    ctx.fillText('STRUCTURAL COLLAPSE',G.W/2,G.H/2);
+
+    ctx.font=`${Math.max(12,G.W*0.022)}px Segoe UI`;
+    ctx.fillStyle='#FFAA00';
+    const causes={scour:'Foundation Scour',load:'Vehicle Overloading',
+                  corrosion:'Reinforcement Corrosion',design:'Design Error'};
+    ctx.fillText('Primary cause: '+(causes[S.collapseType]||S.collapseType),
+                 G.W/2, G.H/2+fs*0.85);
+    ctx.restore();
+  }
+}
+
+// ── UI UPDATE ──────────────────────────────────────────────────
+function updateUI(){
+  const pct=Math.round(S.integrity);
+  const el=document.getElementById('iPct');
+  el.textContent=pct+'%';
+  el.className='int-pct '+(pct>80?'g':pct>60?'y':pct>40?'o':pct>20?'r':'c');
+
+  const fill=document.getElementById('iFill');
+  fill.style.width=pct+'%';
+  fill.style.background=pct>80?'#22CC66':pct>60?'#BBCC22':pct>40?'#EE9922':pct>20?'#EE4422':'#FF0000';
+
+  // Primary failure mode from rates
+  if(!S.collapsed){
+    const r=getDmgRates();
+    const top=Object.entries(r).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])[0];
+    const modeMap={
+      deck_load:'Overload → Deck Flexure', deck_corr:'Corrosion → Deck Spalling',
+      deck_fatigue:'Traffic Fatigue → Micro-cracks', deck_brg:'Bearing → Stress Redistribution',
+      p1_scour:'Scour → Pier 1 Foundation', p2_scour:'Scour → Pier 2 Foundation',
+      p1_flood:'Flood → Pier 1 Impact', p2_flood:'Flood → Pier 2 Impact',
+      p1_load:'Overload → Pier 1 Compression', brg_wear:'Bearing Wear',
+    };
+    const modeStr=top&&top[1]>0.02?(modeMap[top[0]]||top[0]):'None';
+    document.getElementById('fMode').textContent=
+      pct>92?'All systems nominal':'Dominant: '+modeStr;
+  } else {
+    const causes={scour:'Foundation Scour',load:'Overloading',corrosion:'Corrosion',design:'Design Error'};
+    document.getElementById('fMode').textContent='COLLAPSED — '+(causes[S.collapseType]||S.collapseType);
+  }
+
+  // Time
+  const days=Math.floor(S.t);
+  const yr=Math.floor(days/365), rem=days%365;
+  document.getElementById('tv').textContent=yr>0?`${yr}y ${rem}d`:`${days} days`;
+}
+
+// ── EVENT LOG ──────────────────────────────────────────────────
+function logEvent(msg, level){
+  const d=document.createElement('div');
+  d.className='le '+(level||'info');
+  const days=Math.floor(S.t);
+  d.textContent=`[Day ${days}] ${msg}`;
+  const container=document.getElementById('log');
+  container.insertBefore(d, container.firstChild);
+  while(container.children.length>25) container.removeChild(container.lastChild);
+}
+
+// ── MAIN LOOP ──────────────────────────────────────────────────
+let lastTS=0;
+function loop(ts){
+  if(!lastTS) lastTS=ts;
+  const realDt=Math.min(0.1,(ts-lastTS)/1000);
+  lastTS=ts;
+
+  if(S.running){
+    const dtS=realDt*S.speed;
+    const dtD=dtS;
+    S.t+=dtD;
+    updatePhysics(dtD);
+    updateVehicles(realDt);
+    if(S.collapsed) updateCollapse(realDt);
+  }
+
+  _waterT+=realDt;
+
+  // Screen shake
+  const sx=Math.round(S.shakeX*(Math.random()-.5));
+  const sy=Math.round(S.shakeY*(Math.random()-.5));
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  ctx.clearRect(-40,-40,G.W+80,G.H+80);
+  drawBg();
+  const wy=drawWater(realDt);
+  const cp=S.collapsed?Math.min(1,S.collapsePhase):0;
+  drawPier(G.p1X, S.p1, wy, cp);
+  drawPier(G.p2X, S.p2, wy, cp);
+  drawDeck(cp);
+  drawVehicles();
+  drawLabels();
+  drawCollapseOverlay();
+
+  ctx.restore();
+
+  updateUI();
+  requestAnimationFrame(loop);
+}
+
+// ── CONTROLS SETUP ─────────────────────────────────────────────
+function buildFactors(){
+  const c=document.getElementById('factors');
+  c.innerHTML='';
+  FDEFS.forEach(f=>{
+    const v=Math.round((S.factors[f.id]||0)*100);
+    const d=document.createElement('div');
+    d.className='frow';
+    d.innerHTML=`
+      <div class="fhdr">
+        <span class="fname">${f.icon} ${f.label}</span>
+        <span class="fpct" id="fp_${f.id}">${v}%</span>
+      </div>
+      <div class="fdesc">${f.desc}</div>
+      <input type="range" id="fs_${f.id}" min="0" max="100" value="${v}"
+             style="accent-color:${f.color}">
+    `;
+    c.appendChild(d);
+    document.getElementById(`fs_${f.id}`).addEventListener('input',e=>{
+      S.factors[f.id]=parseInt(e.target.value)/100;
+      document.getElementById(`fp_${f.id}`).textContent=e.target.value+'%';
+      if(!fired.has('firstFactor')){
+        fired.add('firstFactor');
+        logEvent(`Factor activated: ${f.label}`,'info');
+      }
+    });
+  });
+}
+
+document.getElementById('bStart').addEventListener('click',()=>{
+  if(!S.running&&!S.collapsed){
+    S.running=true; lastTS=0;
+    document.getElementById('bStart').disabled=true;
+    document.getElementById('bPause').disabled=false;
+    logEvent('Simulation started','ok');
+  }
+});
+document.getElementById('bPause').addEventListener('click',()=>{
+  S.running=false;
+  document.getElementById('bStart').disabled=false;
+  document.getElementById('bPause').disabled=true;
+});
+document.getElementById('bReset').addEventListener('click',()=>{
+  S=mkState(); fired.clear(); lastTS=0;
+  buildFactors();
+  document.getElementById('bStart').disabled=false;
+  document.getElementById('bPause').disabled=true;
+  document.getElementById('log').innerHTML='';
+  logEvent('Simulation reset — all factors cleared','ok');
+  resize();
+});
+document.getElementById('bQuake').addEventListener('click',()=>{
+  if(!S.collapsed){ S.seismic=true; }
+});
+document.getElementById('spdSlider').addEventListener('input',e=>{
+  S.speed=parseInt(e.target.value);
+  document.getElementById('sv').textContent=S.speed+'×';
+});
+
+// ── INIT ───────────────────────────────────────────────────────
+window.addEventListener('resize',resize);
+resize();
+buildFactors();
+logEvent('Bridge loaded. Set failure factors and press ▶ Start.','ok');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
